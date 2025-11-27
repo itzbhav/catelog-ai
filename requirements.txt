@@ -1,0 +1,39 @@
+# LangChain and Google Generative AI
+langchain==0.3.7
+langchain-google-genai==2.0.5
+langchain-chroma==0.1.4
+
+# Vector Database
+chromadb==0.5.18
+
+# Excel and Environment
+pandas==2.2.3
+openpyxl==3.1.5
+python-dotenv==1.0.1
+
+# Flask API
+flask==3.0.0
+
+# PyTorch and Vision
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Image Processing
+pillow
+ftfy
+regex
+tqdm
+
+# BGE Text Embeddings (BAAI General Embedding)
+sentence-transformers>=2.2.0
+FlagEmbedding>=1.2.0
+
+# Marqo Client for Image Embeddings
+marqo>=2.0.0
+
+# CLIP (if needed for fallback or comparison)
+git+https://github.com/openai/CLIP.git
+
+# Utilities
+requests
+numpy
