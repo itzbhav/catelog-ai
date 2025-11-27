@@ -765,7 +765,7 @@ if __name__ == '__main__':
     print("   • Clarification attempt limits (2 max)")
     print("   • Strict text-image synchronization")
     print("   • Deduplication & relevance filtering")
-    print("🌐 URL: http://localhost:5000")
+    print("🌐 URL: http://localhost:8080")
     print("="*60 + "\n")
     
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=8080)
