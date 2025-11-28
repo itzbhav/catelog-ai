@@ -14,11 +14,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configure session (SAFE FOR RAILWAY - NO FILESYSTEM!)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
-app.config['SESSION_TYPE'] = 'null'
-app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = True
-Session(app)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '7f862a8a79175f1baef6c83a00a109e717321cb9529b5e3182ea327fddc56a23')
 
 # ============================================================
 # SAFE GEMINI LOADING
