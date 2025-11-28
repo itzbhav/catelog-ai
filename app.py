@@ -1,11 +1,6 @@
 """Multimodal RAG Chatbot - Complete with Filters & Smart Questions"""
 from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
-import chromadb
-import open_clip
-import torch
-from FlagEmbedding import FlagModel
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 import re
@@ -13,74 +8,91 @@ import traceback
 from datetime import datetime
 import uuid
 
-
+# Load environment variables
 load_dotenv()
-
 
 app = Flask(__name__)
 
-
-# Configure session
-app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
+# Configure session (SAFE FOR RAILWAY - NO FILESYSTEM!)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-this-in-production')
 app.config['SESSION_TYPE'] = 'null'
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 Session(app)
 
-
 # ============================================================
-# GEMINI CONFIGURATION
+# SAFE GEMINI LOADING
 # ============================================================
-print("\n🔧 Configuring Gemini...")
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-
-
-if not GOOGLE_API_KEY:
-    print("❌ ERROR: GOOGLE_API_KEY not found!")
-    gemini_model = None
-else:
-    print(f"✅ API Key found: {GOOGLE_API_KEY[:10]}...")
+def load_gemini():
     try:
+        import google.generativeai as genai
+        GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+        if not GOOGLE_API_KEY:
+            print("❌ ERROR: GOOGLE_API_KEY not found!")
+            return None
+        print(f"✅ API Key found: {GOOGLE_API_KEY[:10]}...")
         genai.configure(api_key=GOOGLE_API_KEY)
         gemini_model = genai.GenerativeModel('gemini-2.0-flash')
         test_response = gemini_model.generate_content("Say 'Ready!'")
         print(f"✅ Gemini: {test_response.text}")
+        return gemini_model
     except Exception as e:
         print(f"❌ Gemini failed: {e}")
-        gemini_model = None
-
+        traceback.print_exc()
+        return None
 
 # ============================================================
-# LOAD MODELS
+# SAFE AI MODELS + VECTOR DB LOADING
 # ============================================================
-print("\n🚀 Loading AI models...")
+def load_ai_models():
+    try:
+        import chromadb
+        import open_clip
+        import torch
+        from FlagEmbedding import FlagModel
+        
+        print("\n🚀 Loading AI models...")
+        
+        bge_model = FlagModel('BAAI/bge-large-en-v1.5', use_fp16=True)
+        print("✅ BGE model loaded")
+        
+        text_client = chromadb.PersistentClient(path="./chroma_db_bge")
+        image_client = chromadb.PersistentClient(path="./chroma_db")
+        print("✅ ChromaDB clients loaded")
+        
+        text_collection = text_client.get_collection("product_text_embeddings")
+        image_collection = image_client.get_collection("product_image_embeddings")
+        print("✅ Collections loaded")
+        
+        marqo_model, _, _ = open_clip.create_model_and_transforms(
+            'hf-hub:Marqo/marqo-ecommerce-embeddings-L'
+        )
+        marqo_tokenizer = open_clip.get_tokenizer('hf-hub:Marqo/marqo-ecommerce-embeddings-L')
+        marqo_model.eval()
+        print("✅ Marqo model loaded")
+        
+        print("✅ All models loaded!\n")
+        return {
+            "bge_model": bge_model,
+            "text_collection": text_collection,
+            "image_collection": image_collection,
+            "marqo_model": marqo_model,
+            "marqo_tokenizer": marqo_tokenizer,
+            "torch": torch
+        }
+    except Exception as e:
+        print(f"❌ AI model/data load failed: {e}")
+        traceback.print_exc()
+        return None
 
-
-bge_model = FlagModel('BAAI/bge-large-en-v1.5', use_fp16=True)
-
-
-text_client = chromadb.PersistentClient(path="./chroma_db_bge")
-image_client = chromadb.PersistentClient(path="./chroma_db")
-
-
-text_collection = text_client.get_collection("product_text_embeddings")
-image_collection = image_client.get_collection("product_image_embeddings")
-
-
-marqo_model, _, _ = open_clip.create_model_and_transforms(
-    'hf-hub:Marqo/marqo-ecommerce-embeddings-L'
-)
-marqo_tokenizer = open_clip.get_tokenizer('hf-hub:Marqo/marqo-ecommerce-embeddings-L')
-marqo_model.eval()
-
-
-print("✅ All models loaded!\n")
-
+# Load resources
+print("\n🔧 Configuring Gemini...")
+gemini_model = load_gemini()
+ai_models = load_ai_models()
 
 # ============================================================
 # FILTER EXTRACTION
 # ============================================================
-
 
 def extract_filters(query):
     """Extract filters from natural language query"""
@@ -175,7 +187,6 @@ def extract_filters(query):
     
     return filters
 
-
 def apply_filters(products, filters):
     """Apply extracted filters to product list"""
     filtered = products
@@ -205,11 +216,9 @@ def apply_filters(products, filters):
     
     return filtered
 
-
 # ============================================================
 # CONVERSATION MEMORY
 # ============================================================
-
 
 def initialize_conversation():
     """Initialize conversation state"""
@@ -224,7 +233,6 @@ def initialize_conversation():
         session.modified = True
         print(f"🆕 New conversation: {session['conversation_id'][:8]}")
     return session['conversation_id']
-
 
 def add_to_conversation(user_query, bot_response, products):
     """Add to conversation memory"""
@@ -256,7 +264,6 @@ def add_to_conversation(user_query, bot_response, products):
     
     session.modified = True
 
-
 def get_conversation_context():
     """Get conversation context"""
     if 'conversation_history' not in session or not session['conversation_history']:
@@ -271,7 +278,6 @@ def get_conversation_context():
             context += f"Products shown: {', '.join(product_names)}\n"
     
     return context
-
 
 def resolve_contextual_query(query):
     """Resolve contextual queries"""
@@ -290,11 +296,9 @@ def resolve_contextual_query(query):
     
     return query, False
 
-
 # ============================================================
 # RETRIEVAL
 # ============================================================
-
 
 def calculate_name_similarity(query, product_name):
     """Calculate name similarity"""
@@ -316,7 +320,6 @@ def calculate_name_similarity(query, product_name):
     
     return 0.0
 
-
 def deduplicate_products(products):
     """Remove duplicates"""
     seen = set()
@@ -329,7 +332,6 @@ def deduplicate_products(products):
             unique.append(product)
     
     return unique
-
 
 def filter_irrelevant_products(products, query):
     """Filter irrelevant products"""
@@ -357,10 +359,20 @@ def filter_irrelevant_products(products, query):
     
     return filtered if filtered else products
 
-
 def retrieve_products(query, top_k=8):
     """Retrieve products with multiple images support"""
+    if ai_models is None:
+        print("❌ AI models not available")
+        return []
+    
     print(f"\n🔍 Query: '{query}'")
+    
+    bge_model = ai_models["bge_model"]
+    text_collection = ai_models["text_collection"]
+    image_collection = ai_models["image_collection"]
+    marqo_model = ai_models["marqo_model"]
+    marqo_tokenizer = ai_models["marqo_tokenizer"]
+    torch = ai_models["torch"]
     
     # TEXT SEARCH
     print("   📝 Searching text...")
@@ -454,7 +466,6 @@ def retrieve_products(query, top_k=8):
     
     return final_products
 
-
 def generate_response_with_gemini(query, products, conversation_context, was_clarification=False):
     """Generate response with clarification awareness"""
     print(f"\n📤 Generating response...")
@@ -471,7 +482,6 @@ def generate_response_with_gemini(query, products, conversation_context, was_cla
     # Add clarification acknowledgment if needed
     clarification_note = ""
     if was_clarification:
-        # Extract first meaningful word from query for acknowledgment
         words = query.lower().split()
         context_word = next((w for w in words if w not in ['i', 'need', 'want', 'show', 'me', 'lights', 'bulbs', 'for', 'the', 'a']), words[0] if words else 'your')
         clarification_note = f"\n\n✨ NOTE: The user just provided clarification. Start your response by acknowledging this naturally (e.g., 'Perfect! For {context_word} lighting, here are...' or 'Great choice! For {context_word} spaces, I recommend...').\n"
@@ -517,7 +527,6 @@ Response:"""
         print(f"❌ Error: {e}")
         return "I found great products for you!", products[:3]
 
-
 def extract_strictly_mentioned_products(response_text, all_products):
     """Extract products explicitly mentioned by name"""
     mentioned = []
@@ -544,17 +553,14 @@ def extract_strictly_mentioned_products(response_text, all_products):
     
     return mentioned
 
-
 # ============================================================
 # FLASK ROUTES
 # ============================================================
-
 
 @app.route('/')
 def home():
     initialize_conversation()
     return render_template('chatbot.html')
-
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -588,27 +594,22 @@ def chat():
             
             print(f"🔍 Checking clarification: current='{query}' vs original='{original}'")
             
-            # Only treat as clarification if query is DIFFERENT from original
             if query.lower() != original.lower() and len(original) > 0:
                 print(f"✅ Received clarification response")
                 
-                # Combine clarification with original query
                 combined_query = f"{query} {original}"
                 
                 print(f"   Original: '{original}'")
                 print(f"   Clarification: '{query}'")
                 print(f"   Combined: '{combined_query}'")
                 
-                # Reset clarification state
                 session['awaiting_clarification'] = False
                 session['original_query'] = None
                 was_clarification = True
                 session.modified = True
                 
-                # Process with combined query
                 query = combined_query
             else:
-                # Same query repeated - reset and treat as new
                 print(f"⚠️ Same query or invalid, treating as new query")
                 session['awaiting_clarification'] = False
                 session['original_query'] = None
@@ -622,19 +623,16 @@ def chat():
             ambiguous_patterns = ['i need', 'show me', 'want', 'looking for', 'lights', 'bulbs', 'give me', 'find me']
             is_ambiguous = any(pattern in query.lower() for pattern in ambiguous_patterns) and len(query.split()) < 5
             
-            # Check clarification attempt limit
             max_attempts = 2
             
             if is_ambiguous and session.get('clarification_attempts', 0) < max_attempts:
                 print(f"❓ Ambiguous query detected - asking clarifying questions (Attempt {session.get('clarification_attempts', 0) + 1}/{max_attempts})")
                 
-                # Increment attempt counter
                 session['clarification_attempts'] = session.get('clarification_attempts', 0) + 1
                 session['awaiting_clarification'] = True
                 session['original_query'] = query
                 session.modified = True
                 
-                # Generate clarifying questions
                 clarification_response = """I'd be happy to help you find the perfect lighting! To give you the best recommendations, could you tell me:
 
 🏠 **Room Type?** (bedroom, living room, kitchen, bathroom, outdoor)
@@ -644,7 +642,6 @@ def chat():
 
 Just describe what you're looking for and I'll find the best options!"""
                 
-                # STOP HERE - Return clarification and don't search
                 return jsonify({
                     'query': query,
                     'response': clarification_response,
@@ -653,7 +650,6 @@ Just describe what you're looking for and I'll find the best options!"""
                     'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
                 })
             
-            # If max attempts reached, proceed with best-effort search
             elif is_ambiguous and session.get('clarification_attempts', 0) >= max_attempts:
                 print(f"⚠️ Max clarification attempts reached ({max_attempts}). Proceeding with best-effort search...")
                 session['clarification_attempts'] = 0
@@ -665,18 +661,15 @@ Just describe what you're looking for and I'll find the best options!"""
         # ============================================================
         print(f"🔍 Searching for: '{query}'")
         
-        # Extract filters
         filters = extract_filters(query)
         if any([filters['price_max'], filters['wattage_min'], filters['features']]):
             print(f"📊 Filters: {filters}")
         
-        # Resolve contextual queries
         expanded_query, is_contextual = resolve_contextual_query(query)
         search_query = expanded_query if is_contextual else query
         
         conversation_context = get_conversation_context()
         
-        # Retrieve products
         all_products = retrieve_products(search_query, top_k=10)
         
         if not all_products:
@@ -688,12 +681,10 @@ Just describe what you're looking for and I'll find the best options!"""
                 'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
             })
         
-        # Apply filters
         if any([filters['price_max'], filters['wattage_min'], filters['features']]):
             all_products = apply_filters(all_products, filters)
             print(f"   ✅ After filtering: {len(all_products)} products")
         
-        # Generate response with Gemini
         ai_response, display_products = generate_response_with_gemini(
             query, 
             all_products, 
@@ -701,15 +692,12 @@ Just describe what you're looking for and I'll find the best options!"""
             was_clarification=was_clarification
         )
         
-        # Add to conversation history
         add_to_conversation(query, ai_response, display_products)
         
-        # Reset clarification counter after successful response
         if was_clarification:
             session['clarification_attempts'] = 0
             session.modified = True
         
-        # Calculate stats
         sync_count = sum(1 for p in display_products if p['synchronized'])
         sync_pct = (sync_count / len(display_products) * 100) if display_products else 0
         
@@ -736,13 +724,11 @@ Just describe what you're looking for and I'll find the best options!"""
             'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
         }), 500
 
-
 @app.route('/clear_conversation', methods=['POST'])
 def clear_conversation():
     """Clear conversation and reset session"""
     session.clear()
     return jsonify({'message': 'Conversation cleared'})
-
 
 @app.route('/reset_debug', methods=['GET'])
 def reset_debug():
@@ -752,7 +738,6 @@ def reset_debug():
         'message': 'Session cleared!',
         'note': 'Refresh the chat page and try again'
     })
-
 
 if __name__ == '__main__':
     print("\n" + "="*60)
@@ -768,5 +753,5 @@ if __name__ == '__main__':
     print("🌐 URL: http://localhost:8080")
     print("="*60 + "\n")
     
-    port = int(os.getenv("PORT", 8080))   # <- This lets Railway assign the port!
+    port = int(os.getenv("PORT", 8080))
     app.run(host='0.0.0.0', port=port, debug=False)
