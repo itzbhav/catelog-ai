@@ -572,16 +572,8 @@ def home():
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    """Main chat endpoint with Smart Question Asking"""
     try:
-        # Check if models are available
-        if ai_models is None:
-            return jsonify({
-                'error': 'AI models not loaded',
-                'response': '❌ Sorry, the AI models are still loading or failed to load. Please try again in a moment.',
-                'products': [],
-                'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
-            }), 503
-        
         query = request.json.get('query', '').strip()
         
         if not query:
