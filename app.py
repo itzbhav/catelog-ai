@@ -41,62 +41,50 @@ def load_gemini():
 # SAFE AI MODELS + VECTOR DB LOADING
 # ============================================================
 def load_ai_models():
-    """Load AI models with detailed error reporting"""
-    models = {}
-    
-    # Load BGE Model
-    try:
-        from FlagEmbedding import FlagModel
-        print("🚀 Loading BGE model...")
-        models["bge_model"] = FlagModel('BAAI/bge-large-en-v1.5', use_fp16=True)
-        print("✅ BGE model loaded")
-    except Exception as e:
-        print(f"❌ BGE model failed: {e}")
-        traceback.print_exc()
-        models["bge_model"] = None
-    
-    # Load ChromaDB
     try:
         import chromadb
-        print("🚀 Loading ChromaDB clients...")
-        text_client = chromadb.PersistentClient(path="./chroma_db_bge")
-        image_client = chromadb.PersistentClient(path="./chroma_db")
-        models["text_collection"] = text_client.get_collection("product_text_embeddings")
-        models["image_collection"] = image_client.get_collection("product_image_embeddings")
-        print("✅ ChromaDB loaded")
-    except Exception as e:
-        print(f"❌ ChromaDB failed: {e}")
-        traceback.print_exc()
-        models["text_collection"] = None
-        models["image_collection"] = None
-    
-    # Load Marqo/OpenCLIP
-    try:
         import open_clip
         import torch
-        print("🚀 Loading Marqo model...")
+        from FlagEmbedding import FlagModel
+        
+        print("\n🚀 Loading AI models...")
+        
+        bge_model = FlagModel('BAAI/bge-large-en-v1.5', use_fp16=True)
+        print("✅ BGE model loaded")
+        
+        text_client = chromadb.PersistentClient(path="./chroma_db_bge")
+        image_client = chromadb.PersistentClient(path="./chroma_db")
+        print("✅ ChromaDB clients loaded")
+        
+        text_collection = text_client.get_collection("product_text_embeddings")
+        image_collection = image_client.get_collection("product_image_embeddings")
+        print("✅ Collections loaded")
+        
         marqo_model, _, _ = open_clip.create_model_and_transforms(
             'hf-hub:Marqo/marqo-ecommerce-embeddings-L'
         )
         marqo_tokenizer = open_clip.get_tokenizer('hf-hub:Marqo/marqo-ecommerce-embeddings-L')
         marqo_model.eval()
-        models["marqo_model"] = marqo_model
-        models["marqo_tokenizer"] = marqo_tokenizer
-        models["torch"] = torch
         print("✅ Marqo model loaded")
+        
+        print("✅ All models loaded!\n")
+        return {
+            "bge_model": bge_model,
+            "text_collection": text_collection,
+            "image_collection": image_collection,
+            "marqo_model": marqo_model,
+            "marqo_tokenizer": marqo_tokenizer,
+            "torch": torch
+        }
     except Exception as e:
-        print(f"❌ Marqo model failed: {e}")
+        print(f"❌ AI model/data load failed: {e}")
         traceback.print_exc()
-        models["marqo_model"] = None
-        models["marqo_tokenizer"] = None
-        models["torch"] = None
-    
-    # Summary
-    loaded = sum(1 for v in models.values() if v is not None)
-    print(f"\n✅ Loaded {loaded}/{len(models)} model components")
-    
-    return models if loaded > 0 else None
+        return None
 
+# Load resources
+print("\n🔧 Configuring Gemini...")
+gemini_model = load_gemini()
+ai_models = load_ai_models()
 
 # ============================================================
 # FILTER EXTRACTION
