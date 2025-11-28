@@ -2,6 +2,4 @@ venv/
 .env
 *.pyc
 __pycache__/
-chroma_db_bge/
-chroma_db/
 *.xlsx
