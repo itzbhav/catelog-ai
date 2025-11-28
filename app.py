@@ -1,6 +1,5 @@
 """Multimodal RAG Chatbot - Complete with Filters & Smart Questions"""
 from flask import Flask, render_template, request, jsonify, session
-from flask_session import Session
 import os
 from dotenv import load_dotenv
 import re
@@ -97,6 +96,10 @@ def load_ai_models():
     
     return models if loaded > 0 else None
 
+# Load resources at module level
+print("\n🔧 Configuring Gemini...")
+gemini_model = load_gemini()
+ai_models = load_ai_models()
 
 # ============================================================
 # FILTER EXTRACTION
@@ -369,6 +372,8 @@ def filter_irrelevant_products(products, query):
 
 def retrieve_products(query, top_k=8):
     """Retrieve products with multiple images support"""
+    global ai_models  # ADD THIS LINE
+    
     if ai_models is None:
         print("❌ AI models not available")
         return []
@@ -476,6 +481,8 @@ def retrieve_products(query, top_k=8):
 
 def generate_response_with_gemini(query, products, conversation_context, was_clarification=False):
     """Generate response with clarification awareness"""
+    global gemini_model  # ADD THIS LINE
+    
     print(f"\n📤 Generating response...")
     
     if not gemini_model:
@@ -574,6 +581,15 @@ def home():
 def chat():
     """Main chat endpoint with Smart Question Asking"""
     try:
+        # Check if models are available
+        if ai_models is None:
+            return jsonify({
+                'error': 'AI models not loaded',
+                'response': '❌ Sorry, the AI models are still loading or failed to load. Please try again in a moment.',
+                'products': [],
+                'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
+            }), 503
+        
         query = request.json.get('query', '').strip()
         
         if not query:
