@@ -768,5 +768,5 @@ if __name__ == '__main__':
     print("🌐 URL: http://localhost:8080")
     print("="*60 + "\n")
     
-    port = int(os.getenv("PORT", 8080))  # Use Railway's assigned port or default to 8080
+    port = int(os.getenv("PORT", 8080))   # <- This lets Railway assign the port!
     app.run(host='0.0.0.0', port=port, debug=False)
