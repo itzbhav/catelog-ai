@@ -10,7 +10,7 @@ print("="*70)
 
 # Load Excel
 print("\n📊 Loading Excel file...")
-df = pd.read_excel('data/data4.xlsx')
+df = pd.read_excel('C:/Users/bhava/Desktop/E-constru/files/BM/data/data7.xlsx')
 print(f"✅ Loaded {len(df)} products")
 print(f"📋 Columns: {list(df.columns)}")
 

@@ -64,4 +64,4 @@ def embed_images_from_excel(excel_path):
     return mq
 
 if __name__ == "__main__":
-    embed_images_from_excel('./data/data4.xlsx')
+    embed_images_from_excel('C:/Users/bhava/Desktop/E-constru/files/BM/data/data7.xlsx')
