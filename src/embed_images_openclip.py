@@ -50,7 +50,7 @@ print("✅ Marqo model loaded")
 
 # Initialize ChromaDB
 print("\n💾 Initializing ChromaDB...")
-client = chromadb.PersistentClient(path="./chroma_db")
+client = chromadb.PersistentClient(path="../chroma_db")
 
 try:
     client.delete_collection("product_image_embeddings")

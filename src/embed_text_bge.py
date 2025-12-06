@@ -21,7 +21,7 @@ print("✅ BGE model loaded")
 
 # Initialize ChromaDB
 print("\n💾 Initializing ChromaDB...")
-client = chromadb.PersistentClient(path="./chroma_db_bge")
+client = chromadb.PersistentClient(path="../chroma_db_bge")
 
 # Delete existing collection
 try:
@@ -41,7 +41,7 @@ class BGEEmbeddings:
 
 # Create collection
 text_store = Chroma(
-    persist_directory="./chroma_db_bge",
+    persist_directory="../chroma_db_bge",
     embedding_function=BGEEmbeddings(bge_model),
     collection_name="product_text_embeddings"
 )
