@@ -322,13 +322,15 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
         
-        function addAssistantMessage(data) {
+                function addAssistantMessage(data) {
             const messagesDiv = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message assistant';
             
             let html = `<div class="message-bubble">`;
-            html += `<p>${data.response.replace(/\n/g, '<br>')}</p>`;
+            
+            // Render HTML response (not escaped text)
+            html += `<div class="response-content">${data.response}</div>`;
             
             // Stats banner
             html += `
@@ -360,6 +362,7 @@
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
+
     </script>
 </body>
 </html>

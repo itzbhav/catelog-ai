@@ -1,4 +1,13 @@
-"""Multimodal RAG Chatbot - Complete with Filters & Smart Questions"""
+"""
+Multimodal RAG Chatbot - Enhanced with Dynamic Configuration
+- Auto-loads config from config/search_config.json
+- Hierarchical category filtering
+- Dynamic attribute extraction
+- Hybrid scoring (vector + keyword + attributes)
+- Comprehensive logging
+"""
+
+
 from flask import Flask, render_template, request, jsonify, session
 import os
 from dotenv import load_dotenv
@@ -6,39 +15,86 @@ import re
 import traceback
 from datetime import datetime
 import uuid
+import markdown
+import logging
+import time
+import json
 
-# Load environment variables
+
+# ============================================================
+# CONFIGURATION & LOGGING
+# ============================================================
+
+
 load_dotenv()
-
 app = Flask(__name__)
-
-# Configure session (SAFE FOR RAILWAY - NO FILESYSTEM!)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '7f862a8a79175f1baef6c83a00a109e717321cb9529b5e3182ea327fddc56a23')
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    handlers=[
+        logging.FileHandler('search_logs.txt'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
 # ============================================================
-# SAFE GEMINI LOADING
+# LOAD SEARCH CONFIGURATION
 # ============================================================
+
+
+SEARCH_CONFIG = None
+
+
+def load_search_config():
+    """Load search configuration from config folder"""
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'search_config.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logger.info(f"✅ Search configuration loaded from: {config_path}")
+        logger.info(f"   Brands: {len(config['brands']['list'])}")
+        logger.info(f"   Categories: {len(config['categories']['patterns'])}")
+        return config
+    except FileNotFoundError:
+        logger.error("❌ search_config.json not found!")
+        logger.error("   Run: python src/analyze_data.py")
+        logger.error("   Then: python src/config_generator.py")
+        return None
+    except Exception as e:
+        logger.error(f"❌ Error loading config: {e}")
+        return None
+
+
+# ============================================================
+# LOAD AI MODELS & GEMINI
+# ============================================================
+
+
 def load_gemini():
+    """Load Gemini model"""
     try:
         import google.generativeai as genai
         GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
         if not GOOGLE_API_KEY:
-            print("❌ ERROR: GOOGLE_API_KEY not found!")
+            logger.error("❌ GOOGLE_API_KEY not found!")
             return None
-        print(f"✅ API Key found: {GOOGLE_API_KEY[:10]}...")
         genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+        gemini_model = genai.GenerativeModel('gemini-flash-latest')
         test_response = gemini_model.generate_content("Say 'Ready!'")
-        print(f"✅ Gemini: {test_response.text}")
+        logger.info(f"✅ Gemini: {test_response.text}")
         return gemini_model
     except Exception as e:
-        print(f"❌ Gemini failed: {e}")
+        logger.error(f"❌ Gemini failed: {e}")
         traceback.print_exc()
         return None
 
-# ============================================================
-# SAFE AI MODELS + VECTOR DB LOADING
-# ============================================================
+
+
 def load_ai_models():
     """Load AI models with detailed error reporting"""
     models = {}
@@ -46,25 +102,28 @@ def load_ai_models():
     # Load BGE Model
     try:
         from FlagEmbedding import FlagModel
-        print("🚀 Loading BGE model...")
+        logger.info("🚀 Loading BGE model...")
         models["bge_model"] = FlagModel('BAAI/bge-large-en-v1.5', use_fp16=True)
-        print("✅ BGE model loaded")
+        logger.info("✅ BGE model loaded")
     except Exception as e:
-        print(f"❌ BGE model failed: {e}")
+        logger.error(f"❌ BGE model failed: {e}")
         traceback.print_exc()
         models["bge_model"] = None
     
-    # Load ChromaDB
+    # Load ChromaDB Collections
     try:
         import chromadb
-        print("🚀 Loading ChromaDB clients...")
+        logger.info("🚀 Loading ChromaDB clients...")
         text_client = chromadb.PersistentClient(path="./chroma_db_bge")
         image_client = chromadb.PersistentClient(path="./chroma_db")
         models["text_collection"] = text_client.get_collection("product_text_embeddings")
         models["image_collection"] = image_client.get_collection("product_image_embeddings")
-        print("✅ ChromaDB loaded")
+        
+        text_count = models["text_collection"].count()
+        image_count = models["image_collection"].count()
+        logger.info(f"✅ ChromaDB loaded - Text: {text_count}, Image: {image_count} embeddings")
     except Exception as e:
-        print(f"❌ ChromaDB failed: {e}")
+        logger.error(f"❌ ChromaDB failed: {e}")
         traceback.print_exc()
         models["text_collection"] = None
         models["image_collection"] = None
@@ -73,7 +132,7 @@ def load_ai_models():
     try:
         import open_clip
         import torch
-        print("🚀 Loading Marqo model...")
+        logger.info("🚀 Loading Marqo model...")
         marqo_model, _, _ = open_clip.create_model_and_transforms(
             'hf-hub:Marqo/marqo-ecommerce-embeddings-L'
         )
@@ -82,9 +141,9 @@ def load_ai_models():
         models["marqo_model"] = marqo_model
         models["marqo_tokenizer"] = marqo_tokenizer
         models["torch"] = torch
-        print("✅ Marqo model loaded")
+        logger.info("✅ Marqo model loaded")
     except Exception as e:
-        print(f"❌ Marqo model failed: {e}")
+        logger.error(f"❌ Marqo model failed: {e}")
         traceback.print_exc()
         models["marqo_model"] = None
         models["marqo_tokenizer"] = None
@@ -92,144 +151,238 @@ def load_ai_models():
     
     # Summary
     loaded = sum(1 for v in models.values() if v is not None)
-    print(f"\n✅ Loaded {loaded}/{len(models)} model components")
+    logger.info(f"✅ Loaded {loaded}/{len(models)} model components\n")
     
     return models if loaded > 0 else None
 
+
+
 # Load resources at module level
-print("\n🔧 Configuring Gemini...")
+logger.info("\n🔧 Initializing application...")
+SEARCH_CONFIG = load_search_config()
 gemini_model = load_gemini()
 ai_models = load_ai_models()
 
+
 # ============================================================
-# FILTER EXTRACTION
+# PRODUCT TYPE CLASSIFICATION (NEW!)
 # ============================================================
 
-def extract_filters(query):
-    """Extract filters from natural language query"""
-    filters = {
-        'price_max': None,
-        'price_min': None,
-        'wattage_min': None,
-        'wattage_max': None,
-        'features': [],
-        'color': None,
-        'brand': None
-    }
+
+def classify_product_type(category):
+    """
+    Classify product type from category name.
+    Matches logic from analyze_data.py
+    """
+    if not category:
+        return 'product'
     
+    category_lower = category.lower()
+    
+    SYSTEM_KEYWORDS = ['system', 'rail', 'track system', 'mounting', 'infrastructure']
+    ACCESSORY_KEYWORDS = ['accessory', 'connector', 'adapter', 'joint', 'fitting', 'component', 'part', 'profile']
+    
+    if any(kw in category_lower for kw in SYSTEM_KEYWORDS):
+        return 'system'
+    if any(kw in category_lower for kw in ACCESSORY_KEYWORDS):
+        return 'accessory'
+    return 'product'
+
+
+
+def detect_user_intent(query):
+    """
+    Detect what TYPE of product user wants based on query language.
+    Generic - works for any domain.
+    """
     query_lower = query.lower()
     
-    # Price filters
-    price_patterns = [
-        (r'under\s+₹?(\d+)', 'max'),
-        (r'below\s+₹?(\d+)', 'max'),
-        (r'less than\s+₹?(\d+)', 'max'),
-        (r'above\s+₹?(\d+)', 'min'),
-        (r'over\s+₹?(\d+)', 'min'),
-        (r'more than\s+₹?(\d+)', 'min'),
-        (r'between\s+₹?(\d+)\s+and\s+₹?(\d+)', 'range')
-    ]
+    # Intent: User wants installation/mounting components
+    INSTALLATION_KEYWORDS = ['install', 'mount', 'mounting', 'rail', 'system', 'setup', 'infrastructure']
+    if any(keyword in query_lower for keyword in INSTALLATION_KEYWORDS):
+        return 'system'
     
-    for pattern, filter_type in price_patterns:
-        match = re.search(pattern, query_lower)
-        if match:
-            if filter_type == 'max':
-                filters['price_max'] = int(match.group(1))
-            elif filter_type == 'min':
-                filters['price_min'] = int(match.group(1))
-            elif filter_type == 'range':
-                filters['price_min'] = int(match.group(1))
-                filters['price_max'] = int(match.group(2))
-            print(f"   💰 Price filter: {filter_type} = {match.groups()}")
+    # Intent: User wants accessories/parts
+    ACCESSORY_KEYWORDS = ['connector', 'accessory', 'adapter', 'fitting', 'part', 'component', 'join']
+    if any(keyword in query_lower for keyword in ACCESSORY_KEYWORDS):
+        return 'accessory'
     
-    # Wattage filters
-    wattage_patterns = [
-        (r'(\d+)w\s+to\s+(\d+)w', 'range'),
-        (r'above\s+(\d+)w', 'min'),
-        (r'over\s+(\d+)w', 'min'),
-        (r'(\d+)\+w', 'min'),
-        (r'under\s+(\d+)w', 'max'),
-        (r'below\s+(\d+)w', 'max'),
-        (r'low\s+wattage', 'low'),
-        (r'high\s+wattage', 'high')
-    ]
-    
-    for pattern, filter_type in wattage_patterns:
-        match = re.search(pattern, query_lower)
-        if match:
-            if filter_type == 'range':
-                filters['wattage_min'] = int(match.group(1))
-                filters['wattage_max'] = int(match.group(2))
-            elif filter_type == 'min':
-                filters['wattage_min'] = int(match.group(1))
-            elif filter_type == 'max':
-                filters['wattage_max'] = int(match.group(1))
-            elif filter_type == 'low':
-                filters['wattage_max'] = 10
-            elif filter_type == 'high':
-                filters['wattage_min'] = 20
-            print(f"   ⚡ Wattage filter: {filter_type}")
-    
-    # Feature keywords
-    feature_keywords = {
-        'battery': ['battery', 'backup', 'emergency', 'inverter'],
-        'dimmable': ['dimmable', 'dimmer', 'adjustable brightness'],
-        'energy_efficient': ['energy efficient', 'energy saving', 'saver', 'star rated'],
-        'decorative': ['decorative', 'aesthetic', 'candle', 'filament', 'vintage'],
-        'bright': ['bright', 'high brightness', 'high lumen']
-    }
-    
-    for feature, keywords in feature_keywords.items():
-        if any(kw in query_lower for kw in keywords):
-            filters['features'].append(feature)
-            print(f"   ✨ Feature filter: {feature}")
-    
-    # Color filters
-    color_keywords = ['warm white', 'cool white', 'daylight', 'cdl', 'ww']
-    for color in color_keywords:
-        if color in query_lower:
-            filters['color'] = color
-            print(f"   🎨 Color filter: {color}")
-    
-    # Brand filter
-    if 'philips' in query_lower:
-        filters['brand'] = 'philips'
-        print(f"   🏷️ Brand filter: Philips")
-    
-    return filters
+    # Default: User wants the main product
+    return 'product'
 
-def apply_filters(products, filters):
-    """Apply extracted filters to product list"""
-    filtered = products
-    
-    if filters['features']:
-        temp_filtered = []
-        for product in filtered:
-            product_text = f"{product['name']} {product.get('description', '')}".lower()
-            
-            matches_features = False
-            for feature in filters['features']:
-                if feature == 'battery' and any(kw in product_text for kw in ['emergency', 'inverter', 'battery']):
-                    matches_features = True
-                elif feature == 'energy_efficient' and any(kw in product_text for kw in ['saver', 'star', 'efficient']):
-                    matches_features = True
-                elif feature == 'decorative' and any(kw in product_text for kw in ['deco', 'candle', 'filament']):
-                    matches_features = True
-                elif feature == 'bright' and any(kw in product_text for kw in ['high wattage', 'bright', 'stellarbright']):
-                    matches_features = True
-            
-            if matches_features:
-                temp_filtered.append(product)
+
+
+def filter_by_product_type(products, user_intent):
+    """
+    Filter products based on user intent vs product type.
+    Boosts matching types, penalizes mismatches.
+    """
+    for product in products:
+        category = product.get('category', '')
+        product_type = classify_product_type(category)
+        product['product_type'] = product_type
         
-        if temp_filtered:
-            filtered = temp_filtered
-            print(f"   ✅ Filtered by features: {len(filtered)} products remain")
+        # Safety check: Initialize final_score if it doesn't exist
+        if 'final_score' not in product:
+            product['final_score'] = product.get('text_score', 0) + product.get('image_score', 0)
+        
+        # If user intent matches product type, boost score
+        if product_type == user_intent:
+            product['final_score'] *= 1.5  # 50% boost
+            product['type_match'] = True
+        # If mismatch, heavily penalize
+        elif user_intent in ['system', 'accessory'] and product_type == 'product':
+            product['final_score'] *= 0.1  # 90% penalty
+            product['type_match'] = False
+        elif user_intent == 'product' and product_type in ['system', 'accessory']:
+            product['final_score'] *= 0.2  # 80% penalty
+            product['type_match'] = False
+        else:
+            product['type_match'] = True  # neutral
     
-    return filtered
+    return products
+
+
+def detect_category_dynamic(query):
+    """
+    Detect category using config patterns with SPECIFICITY RANKING.
+    Prefers more specific matches (e.g., "bollard light" over "light").
+    """
+    if not SEARCH_CONFIG:
+        return None
+    
+    query_lower = query.lower()
+    matches = []
+    
+    # Find all matching categories with their pattern specificity
+    for category, patterns in SEARCH_CONFIG['categories']['patterns'].items():
+        for pattern in patterns:
+            if pattern in query_lower:
+                # Score by pattern length (longer = more specific)
+                specificity = len(pattern.split())
+                matches.append((category, specificity, pattern))
+    
+    if not matches:
+        logger.info(f"   📂 No specific category detected")
+        return None
+    
+    # Sort by specificity (descending) - prefer longer, more specific patterns
+    matches.sort(key=lambda x: x[1], reverse=True)
+    
+    best_category = matches[0][0]
+    best_pattern = matches[0][2]
+    logger.info(f"   📂 Category detected: {best_category} (matched: '{best_pattern}')")
+    
+    return best_category
+
+
+
+def extract_attributes_dynamic(query):
+    """Extract attributes using config patterns"""
+    if not SEARCH_CONFIG:
+        return {}
+    
+    query_lower = query.lower()
+    attributes = {}
+    
+    patterns = SEARCH_CONFIG['attribute_patterns']
+    
+    # Extract wattage
+    wattage_match = re.search(patterns['wattage'], query_lower)
+    if wattage_match:
+        attributes['wattage'] = wattage_match.group(1)
+        logger.info(f"   ⚡ Wattage detected: {attributes['wattage']}W")
+    
+    # Extract voltage
+    voltage_match = re.search(patterns['voltage'], query_lower)
+    if voltage_match:
+        attributes['voltage'] = voltage_match.group(1)
+        logger.info(f"   🔌 Voltage detected: {attributes['voltage']}V")
+    
+    # Extract color temperature
+    for color_type, keywords in patterns['color_temp'].items():
+        if any(kw in query_lower for kw in keywords):
+            attributes['color'] = color_type
+            logger.info(f"   🎨 Color detected: {color_type.replace('_', ' ')}")
+            break
+    
+    # Extract brand
+    for brand in SEARCH_CONFIG['brands']['list']:
+        if brand in query_lower:
+            attributes['brand'] = brand
+            logger.info(f"   🏷️  Brand detected: {brand.title()}")
+            break
+    
+    return attributes
+
+
+
+def calculate_dynamic_score(product, query, attributes, category):
+    """Calculate score using config weights"""
+    if not SEARCH_CONFIG:
+        return 0
+    
+    weights = SEARCH_CONFIG['scoring_weights']
+    score = 0
+    
+    content_lower = product.get('content', '').lower()
+    
+    # Base vector score
+    if product.get('in_text'):
+        text_score = (1 / (1 + product['text_distance'])) * 100
+        score += text_score * weights['text_vector_weight']
+    
+    if product.get('in_image'):
+        image_score = (1 / (1 + product['image_distance'])) * 100
+        score += image_score * weights['image_vector_weight']
+    
+    # Synchronization bonus
+    if product.get('in_text') and product.get('in_image'):
+        score += weights['text_and_image_sync']
+        product['synchronized'] = True
+    else:
+        product['synchronized'] = False
+    
+    # Keyword matching
+    query_words = query.lower().split()
+    keyword_matches = sum(1 for word in query_words if word in content_lower)
+    keyword_score = keyword_matches * weights['keyword_match_per_word']
+    score += keyword_score
+    product['keyword_matches'] = keyword_matches
+    product['keyword_score'] = keyword_score
+    
+    # Attribute matching
+    attribute_score = 0
+    
+    if attributes.get('wattage') and f"{attributes['wattage']}w" in content_lower:
+        attribute_score += weights['wattage_exact_match']
+    
+    if attributes.get('voltage') and f"{attributes['voltage']}v" in content_lower:
+        attribute_score += weights['voltage_exact_match']
+    
+    if attributes.get('color'):
+        color_keywords = SEARCH_CONFIG['attribute_patterns']['color_temp'][attributes['color']]
+        if any(kw in content_lower for kw in color_keywords):
+            attribute_score += weights['color_temp_match']
+    
+    if attributes.get('brand') and attributes['brand'] in product.get('brand', '').lower():
+        attribute_score += weights['brand_exact_match']
+    
+    # Category match bonus
+    if category and category in product.get('category', ''):
+        attribute_score += weights['category_match']
+    
+    score += attribute_score
+    product['attribute_score'] = attribute_score
+    
+    return score
+
+
 
 # ============================================================
 # CONVERSATION MEMORY
 # ============================================================
+
 
 def initialize_conversation():
     """Initialize conversation state"""
@@ -242,8 +395,10 @@ def initialize_conversation():
         session['original_query'] = None
         session['clarification_attempts'] = 0
         session.modified = True
-        print(f"🆕 New conversation: {session['conversation_id'][:8]}")
+        logger.info(f"🆕 New conversation: {session['conversation_id'][:8]}")
     return session['conversation_id']
+
+
 
 def add_to_conversation(user_query, bot_response, products):
     """Add to conversation memory"""
@@ -256,7 +411,7 @@ def add_to_conversation(user_query, bot_response, products):
             'position': i,
             'name': prod['name'],
             'brand': prod['brand'],
-            'row_id': prod['row_id']
+            'row_id': prod.get('row_id', f"prod_{i}")
         })
     
     conversation_entry = {
@@ -275,6 +430,8 @@ def add_to_conversation(user_query, bot_response, products):
     
     session.modified = True
 
+
+
 def get_conversation_context():
     """Get conversation context"""
     if 'conversation_history' not in session or not session['conversation_history']:
@@ -290,6 +447,8 @@ def get_conversation_context():
     
     return context
 
+
+
 def resolve_contextual_query(query):
     """Resolve contextual queries"""
     query_lower = query.lower()
@@ -302,127 +461,135 @@ def resolve_contextual_query(query):
     if is_contextual and 'last_query' in session and session['last_query']:
         previous_query = session['last_query']
         expanded_query = f"{previous_query} {query}"
-        print(f"   🔗 Expanded: '{expanded_query}'")
+        logger.info(f"   🔗 Expanded: '{expanded_query}'")
         return expanded_query, True
     
     return query, False
 
+
+
 # ============================================================
-# RETRIEVAL
+# ENHANCED RETRIEVAL WITH DYNAMIC CONFIG
 # ============================================================
 
-def calculate_name_similarity(query, product_name):
-    """Calculate name similarity"""
-    query_lower = query.lower()
-    product_lower = product_name.lower()
-    
-    if query_lower == product_lower:
-        return 1.0
-    
-    query_words = set(re.findall(r'\w+', query_lower))
-    product_words = set(re.findall(r'\w+', product_lower))
-    
-    if query_words and query_words.issubset(product_words):
-        return 0.8
-    
-    overlap = query_words & product_words
-    if overlap and query_words:
-        return len(overlap) / len(query_words) * 0.6
-    
-    return 0.0
 
-def deduplicate_products(products):
-    """Remove duplicates"""
-    seen = set()
-    unique = []
-    
-    for product in products:
-        key = f"{product['name'].lower()}_{product['brand'].lower()}"
-        if key not in seen:
-            seen.add(key)
-            unique.append(product)
-    
-    return unique
-
-def filter_irrelevant_products(products, query):
-    """Filter irrelevant products"""
-    query_lower = query.lower()
-    filtered = []
-    
-    incompatible = {
-        'bedroom': ['emergency', 't-bulb', 't-beamer'],
-        'decorative': ['emergency', 'stellarbright super'],
-        'ambient': ['emergency', 'super high'],
-    }
-    
-    for product in products:
-        product_lower = product['name'].lower()
-        is_incompatible = False
-        
-        for query_term, incompatible_terms in incompatible.items():
-            if query_term in query_lower:
-                if any(term in product_lower for term in incompatible_terms):
-                    is_incompatible = True
-                    break
-        
-        if not is_incompatible:
-            filtered.append(product)
-    
-    return filtered if filtered else products
-
-def retrieve_products(query, top_k=8):
-    """Retrieve products with multiple images support"""
-    global ai_models  # ADD THIS LINE
+def retrieve_products(query, top_k=10):
+    """Enhanced retrieval with dynamic configuration and hierarchical filtering"""
+    global ai_models
     
     if ai_models is None:
-        print("❌ AI models not available")
+        logger.error("❌ AI models not available")
         return []
     
-    print(f"\n🔍 Query: '{query}'")
+    if not SEARCH_CONFIG:
+        logger.error("❌ Search config not loaded")
+        return []
+    
+    start_time = time.time()
+    
+    logger.info("\n" + "="*70)
+    logger.info(f"🔍 QUERY: '{query}'")
+    logger.info("="*70)
+    
+    # ============================================================
+    # STEP 1: ANALYZE QUERY (Dynamic!)
+    # ============================================================
+    logger.info("\n🧠 STEP 1: ANALYZING QUERY")
+    
+    category = detect_category_dynamic(query)
+    attributes = extract_attributes_dynamic(query)
+    
+    logger.info(f"   Detected attributes: {attributes}")
+    
+    # ============================================================
+    # STEP 2: HIERARCHICAL TEXT SEARCH
+    # ============================================================
+    logger.info("\n📝 STEP 2: TEXT EMBEDDING SEARCH")
     
     bge_model = ai_models["bge_model"]
     text_collection = ai_models["text_collection"]
+    
+    text_embedding = bge_model.encode([query])[0].tolist()
+    
+    # Build ChromaDB filter for hierarchical search
+    where_filter = None
+    if category:
+        where_filter = {"category": {"$eq": category}}
+        logger.info(f"   🔍 Filtering by category: {category}")
+    
+    # Search with optional category filter
+    try:
+        text_results = text_collection.query(
+            query_embeddings=[text_embedding],
+            n_results=top_k * 3,
+            where=where_filter,
+            include=['metadatas', 'distances', 'documents']
+        )
+    except Exception as e:
+        logger.warning(f"   ⚠️ Filtered search failed, trying without filter: {e}")
+        text_results = text_collection.query(
+            query_embeddings=[text_embedding],
+            n_results=top_k * 3,
+            include=['metadatas', 'distances', 'documents']
+        )
+    
+    if text_results and text_results['metadatas']:
+        logger.info(f"   ✅ Found {len(text_results['metadatas'][0])} text matches")
+        logger.info(f"   📊 Top 3 distances: {[round(d, 3) for d in text_results['distances'][0][:3]]}")
+    
+    # ============================================================
+    # STEP 3: HIERARCHICAL IMAGE SEARCH
+    # ============================================================
+    logger.info("\n🖼️  STEP 3: IMAGE EMBEDDING SEARCH")
+    
     image_collection = ai_models["image_collection"]
     marqo_model = ai_models["marqo_model"]
     marqo_tokenizer = ai_models["marqo_tokenizer"]
     torch = ai_models["torch"]
     
-    # TEXT SEARCH
-    print("   📝 Searching text...")
-    text_embedding = bge_model.encode([query])[0].tolist()
-    text_results = text_collection.query(
-        query_embeddings=[text_embedding],
-        n_results=top_k * 2,
-        include=['metadatas', 'distances', 'documents']
-    )
-    
-    # IMAGE SEARCH
-    print("   📸 Searching images...")
     text_input = marqo_tokenizer([query])
     with torch.no_grad():
         query_feat = marqo_model.encode_text(text_input)
         query_feat /= query_feat.norm(dim=-1, keepdim=True)
     image_embedding = query_feat[0].tolist()
     
-    image_results = image_collection.query(
-        query_embeddings=[image_embedding],
-        n_results=top_k * 2,
-        include=['metadatas', 'distances', 'documents']
-    )
+    try:
+        image_results = image_collection.query(
+            query_embeddings=[image_embedding],
+            n_results=top_k * 3,
+            where=where_filter,
+            include=['metadatas', 'distances', 'documents']
+        )
+    except Exception as e:
+        logger.warning(f"   ⚠️ Filtered search failed, trying without filter: {e}")
+        image_results = image_collection.query(
+            query_embeddings=[image_embedding],
+            n_results=top_k * 3,
+            include=['metadatas', 'distances', 'documents']
+        )
     
-    # MERGE
+    if image_results and image_results['metadatas']:
+        logger.info(f"   ✅ Found {len(image_results['metadatas'][0])} image matches")
+        logger.info(f"   📊 Top 3 distances: {[round(d, 3) for d in image_results['distances'][0][:3]]}")
+    
+    # ============================================================
+    # STEP 4: MERGE RESULTS
+    # ============================================================
+    logger.info("\n🔄 STEP 4: MERGING TEXT + IMAGE RESULTS")
+    
     products = {}
     
     # Process text results
     for i, metadata in enumerate(text_results['metadatas'][0]):
-        row_id = metadata['row_id']
+        row_id = metadata.get('row_id', f'text_{i}')
         products[row_id] = {
-            'name': metadata['product_name'],
-            'brand': metadata['brand'],
+            'name': metadata.get('product_name', 'Unknown'),
+            'brand': metadata.get('brand', 'Unknown'),
             'category': metadata.get('category', ''),
             'image_url': metadata.get('image_url', ''),
             'image_url_2': metadata.get('image_url_2', ''),
-            'description': text_results['documents'][0][i][:200],
+            'description': text_results['documents'][0][i][:200] if i < len(text_results['documents'][0]) else '',
+            'content': text_results['documents'][0][i] if i < len(text_results['documents'][0]) else '',
             'row_id': row_id,
             'in_text': True,
             'in_image': False,
@@ -431,59 +598,99 @@ def retrieve_products(query, top_k=8):
     
     # Process image results
     for i, metadata in enumerate(image_results['metadatas'][0]):
-        row_id = metadata['row_id']
+        row_id = metadata.get('row_id', f'image_{i}')
         if row_id in products:
             products[row_id]['in_image'] = True
             products[row_id]['image_distance'] = image_results['distances'][0][i]
         else:
             products[row_id] = {
-                'name': metadata['product_name'],
-                'brand': metadata['brand'],
+                'name': metadata.get('product_name', 'Unknown'),
+                'brand': metadata.get('brand', 'Unknown'),
                 'category': metadata.get('category', ''),
                 'image_url': metadata.get('image_url', ''),
                 'image_url_2': '',
                 'description': '',
+                'content': '',
                 'row_id': row_id,
                 'in_text': False,
                 'in_image': True,
                 'image_distance': image_results['distances'][0][i]
             }
     
-    # SCORE
-    for prod_id, product in products.items():
-        score = 0.0
-        
-        name_match = calculate_name_similarity(query, product['name'])
-        score += name_match * 100
-        
-        if product['in_text'] and product['in_image']:
-            score += 50
-            product['synchronized'] = True
-        else:
-            product['synchronized'] = False
-        
-        if product['in_text']:
-            score += (1 / (1 + product['text_distance'])) * 20
-        
-        if product['in_image']:
-            score += (1 / (1 + product['image_distance'])) * 30
-        
-        product['final_score'] = score
+    synchronized_count = sum(1 for p in products.values() if p['in_text'] and p['in_image'])
+    logger.info(f"   📊 Total unique products: {len(products)}")
+    logger.info(f"   ✅ Synchronized (text + image): {synchronized_count}")
     
-    sorted_products = sorted(products.values(), key=lambda x: x['final_score'], reverse=True)
-    filtered_products = filter_irrelevant_products(sorted_products, query)
-    unique_products = deduplicate_products(filtered_products)
+    # ============================================================
+    # STEP 4.5: DEDUPLICATE
+    # ============================================================
+    logger.info("\n🔄 STEP 4.5: DEDUPLICATING RESULTS")
     
-    final_products = unique_products[:top_k]
-    print(f"   ✅ Found {len(final_products)} products\n")
+    seen_ids = set()
+    unique_products = {}
     
-    return final_products
+    for row_id, product in products.items():
+        if row_id not in seen_ids:
+            seen_ids.add(row_id)
+            unique_products[row_id] = product
+    
+    products = unique_products
+    logger.info(f"   ✅ Deduplicated to {len(products)} unique products")
+    
+    all_products = list(products.values())
+    
+    # ============================================================
+    # STEP 5: DYNAMIC SCORING
+    # ============================================================
+    logger.info("\n⚡ STEP 5: HYBRID SCORING")
+    
+    for product in all_products:
+        score = calculate_dynamic_score(product, query, attributes, category)
+        product['final_score'] = score  # Ensure it's assigned
+    
+    # ============================================================
+    # STEP 5.5: PRODUCT TYPE FILTERING (FIXED - OUTSIDE LOOP!)
+    # ============================================================
+    logger.info("\n🎯 STEP 5.5: PRODUCT TYPE FILTERING")
+    
+    user_intent = detect_user_intent(query)
+    logger.info(f"   User intent detected: {user_intent}")
+    
+    all_products = filter_by_product_type(all_products, user_intent)
+    
+    # Sort by score AFTER type filtering
+    all_products.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+    
+    # ============================================================
+    # STEP 6: LOG TOP RESULTS
+    # ============================================================
+    logger.info(f"\n🏆 TOP 3 RESULTS:")
+    for i, p in enumerate(all_products[:3], 1):
+        logger.info(f"\n   #{i} {p['name']} by {p['brand']}")
+        logger.info(f"      Category: {p.get('category', 'Unknown')}")
+        logger.info(f"      Product Type: {p.get('product_type', 'Unknown')}")
+        logger.info(f"      Type Match: {'✅' if p.get('type_match', False) else '❌'}")
+        logger.info(f"      Final Score: {p.get('final_score', 0):.2f}")
+        logger.info(f"      Text Match: {'✅' if p.get('in_text', False) else '❌'}")
+        logger.info(f"      Image Match: {'✅' if p.get('in_image', False) else '❌'}")
+        logger.info(f"      Keywords: {p.get('keyword_matches', 0)}/{len(query.split())} (+{p.get('keyword_score', 0)})")
+        logger.info(f"      Attributes: +{p.get('attribute_score', 0)}")
+        logger.info(f"      Synchronized: {'✅' if p.get('synchronized', False) else '❌'}")
+    
+    search_time = (time.time() - start_time) * 1000
+    logger.info(f"\n⏱️  SEARCH COMPLETED in {search_time:.0f}ms")
+    logger.info(f"📦 Returning {min(len(all_products), top_k)} products")
+    logger.info("="*70 + "\n")
+    
+    return all_products[:top_k]
+
+
 
 def generate_response_with_gemini(query, products, conversation_context, was_clarification=False):
     """Generate response with clarification awareness"""
-    global gemini_model  # ADD THIS LINE
+    global gemini_model
     
-    print(f"\n📤 Generating response...")
+    logger.info(f"📤 Generating Gemini response...")
     
     if not gemini_model:
         return "⚠️ AI unavailable.", products[:3]
@@ -491,7 +698,7 @@ def generate_response_with_gemini(query, products, conversation_context, was_cla
     # Build product list
     product_context = "AVAILABLE PRODUCTS (mention ONLY these by EXACT NAME):\n\n"
     for i, prod in enumerate(products, 1):
-        sync = " (HIGH CONFIDENCE)" if prod['synchronized'] else ""
+        sync = " (HIGH CONFIDENCE)" if prod.get('synchronized', False) else ""
         product_context += f"{i}. **{prod['name']}** by {prod['brand']}{sync}\n"
     
     # Add clarification acknowledgment if needed
@@ -501,46 +708,73 @@ def generate_response_with_gemini(query, products, conversation_context, was_cla
         context_word = next((w for w in words if w not in ['i', 'need', 'want', 'show', 'me', 'lights', 'bulbs', 'for', 'the', 'a']), words[0] if words else 'your')
         clarification_note = f"\n\n✨ NOTE: The user just provided clarification. Start your response by acknowledging this naturally (e.g., 'Perfect! For {context_word} lighting, here are...' or 'Great choice! For {context_word} spaces, I recommend...').\n"
     
-    prompt = f"""You are a helpful lighting store assistant.
+    prompt = f"""You are a professional lighting assistant.
 
 {conversation_context}
-
 {clarification_note}
 
-Current Question: "{query}"
+Question: "{query}"
 
 {product_context}
 
-STRICT RULES:
-1. {"Acknowledge the clarification naturally, then recommend" if was_clarification else "Recommend"} 2-4 products by mentioning their EXACT NAMES from the list above
-2. Use format: **Product Name** by Brand (e.g., **Deco Mini and Joy Vision** by Philips)
-3. Do NOT mention products not in the list
-4. Explain why each product suits their needs (2-3 paragraphs)
-5. Be conversational and helpful
+FORMAT (Keep response under 150 words total):
+
+Perfect! [1 sentence acknowledgment].
+
+**Recommended Products:**
+
+1. **[Product Name]** by [Brand]
+   - [Feature 1]
+   - [Feature 2]
+   - Why it's perfect: [1 sentence benefit]
+
+2. **[Product Name]** by [Brand]
+   - [Feature 1]
+   - [Feature 2]
+   - Why it's perfect: [1 sentence benefit]
+
+[Optional 3rd product if highly relevant]
+
+**Key Benefits:**
+- [Benefit 1]
+- [Benefit 2]
+- [Benefit 3]
+
+[End with 1 question]
+
+RULES:
+- Recommend 2-3 products maximum (use EXACT names from list above)
+- Use bullet points (-) not (•)
+- Keep each point under 8 words
+- Total response: 100-150 words
+- Be conversational, not robotic
+- {f"Acknowledge their clarification naturally" if was_clarification else "Start with 'Perfect!' or 'Great choice!'"}
 
 Response:"""
     
     try:
         response = gemini_model.generate_content(prompt)
         response_text = response.text
-        print(f"✅ Generated ({len(response_text)} chars)")
+        logger.info(f"✅ Gemini response generated ({len(response_text)} chars)")
         
         # Extract mentioned products
         mentioned_products = extract_strictly_mentioned_products(response_text, products)
         
         if not mentioned_products:
-            print("⚠️ No products clearly mentioned, using top 3 synced")
-            mentioned_products = [p for p in products if p['synchronized']][:3]
+            logger.warning("⚠️ No products clearly mentioned, using top 3 synced")
+            mentioned_products = [p for p in products if p.get('synchronized', False)][:3]
+            if not mentioned_products:
+                mentioned_products = products[:3]
         
-        print(f"✅ Displaying {len(mentioned_products)} mentioned products")
-        for p in mentioned_products:
-            print(f"   • {p['name']}")
+        logger.info(f"✅ Displaying {len(mentioned_products)} mentioned products")
         
         return response_text, mentioned_products
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        logger.error(f"❌ Gemini error: {e}")
         return "I found great products for you!", products[:3]
+
+
 
 def extract_strictly_mentioned_products(response_text, all_products):
     """Extract products explicitly mentioned by name"""
@@ -550,42 +784,56 @@ def extract_strictly_mentioned_products(response_text, all_products):
     for product in all_products:
         product_name_lower = product['name'].lower()
         
+        # Exact full name match
         if product_name_lower in response_lower:
             mentioned.append(product)
-            print(f"   ✓ Mentioned: {product['name']}")
             continue
         
+        # Word-by-word matching
         product_words = set(re.findall(r'\w+', product_name_lower))
-        product_words -= {'philips', 'led', 'bulb', 'lamp', 'light', 'by', 'and', 'the'}
+        product_words -= {'philips', 'mascon', 'led', 'bulb', 'lamp', 'light', 'by', 'and', 'the'}
         
         if len(product_words) >= 2:
-            words_found = sum(1 for word in product_words if word in response_lower)
+            words_found = sum(1 for word in product_words if f' {word} ' in f' {response_lower} ')
             match_ratio = words_found / len(product_words)
             
-            if match_ratio >= 0.75:
+            threshold = 1.0 if len(product_words) == 2 else 0.8
+            
+            if match_ratio >= threshold:
                 mentioned.append(product)
-                print(f"   ✓ Partial match: {product['name']} ({match_ratio:.0%})")
     
-    return mentioned
+    return mentioned[:4]
+
+
 
 # ============================================================
 # FLASK ROUTES
 # ============================================================
+
 
 @app.route('/')
 def home():
     initialize_conversation()
     return render_template('chatbot.html')
 
+
+
 @app.route('/chat', methods=['POST'])
 def chat():
-    """Main chat endpoint with Smart Question Asking"""
+    """Main chat endpoint with enhanced search"""
     try:
-        # Check if models are available
         if ai_models is None:
             return jsonify({
                 'error': 'AI models not loaded',
                 'response': '❌ Sorry, the AI models are still loading or failed to load. Please try again in a moment.',
+                'products': [],
+                'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
+            }), 503
+        
+        if not SEARCH_CONFIG:
+            return jsonify({
+                'error': 'Configuration not loaded',
+                'response': '❌ Sorry, the search configuration is not loaded. Please restart the application.',
                 'products': [],
                 'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
             }), 503
@@ -595,37 +843,23 @@ def chat():
         if not query:
             return jsonify({'error': 'No query provided'}), 400
         
-        # Initialize conversation
         conversation_id = initialize_conversation()
         
-        print(f"\n{'='*60}")
-        print(f"💬 Conversation: {conversation_id[:8]}")
-        print(f"{'='*60}")
-        
-        # DEBUG: Show session state
-        print(f"📊 Session State:")
-        print(f"   awaiting_clarification: {session.get('awaiting_clarification', False)}")
-        print(f"   original_query: '{session.get('original_query', 'None')}'")
-        print(f"   clarification_attempts: {session.get('clarification_attempts', 0)}")
+        logger.info(f"\n{'🔵'*35}")
+        logger.info(f"💬 USER MESSAGE: '{query}'")
+        logger.info(f"   Conversation ID: {conversation_id[:8]}")
+        logger.info(f"{'🔵'*35}")
         
         was_clarification = False
         
-        # ============================================================
-        # CHECK IF RESPONDING TO CLARIFICATION
-        # ============================================================
+        # Check if responding to clarification
         if session.get('awaiting_clarification', False) and session.get('original_query'):
             original = session.get('original_query', '')
             
-            print(f"🔍 Checking clarification: current='{query}' vs original='{original}'")
-            
             if query.lower() != original.lower() and len(original) > 0:
-                print(f"✅ Received clarification response")
-                
+                logger.info(f"✅ Received clarification response")
                 combined_query = f"{query} {original}"
-                
-                print(f"   Original: '{original}'")
-                print(f"   Clarification: '{query}'")
-                print(f"   Combined: '{combined_query}'")
+                logger.info(f"   Combined: '{combined_query}'")
                 
                 session['awaiting_clarification'] = False
                 session['original_query'] = None
@@ -634,15 +868,12 @@ def chat():
                 
                 query = combined_query
             else:
-                print(f"⚠️ Same query or invalid, treating as new query")
                 session['awaiting_clarification'] = False
                 session['original_query'] = None
                 session['clarification_attempts'] = 0
                 session.modified = True
         
-        # ============================================================
-        # CHECK FOR AMBIGUOUS QUERY (NEW VAGUE QUERY)
-        # ============================================================
+        # Check for ambiguous query
         if not was_clarification:
             ambiguous_patterns = ['i need', 'show me', 'want', 'looking for', 'lights', 'bulbs', 'give me', 'find me']
             is_ambiguous = any(pattern in query.lower() for pattern in ambiguous_patterns) and len(query.split()) < 5
@@ -650,7 +881,7 @@ def chat():
             max_attempts = 2
             
             if is_ambiguous and session.get('clarification_attempts', 0) < max_attempts:
-                print(f"❓ Ambiguous query detected - asking clarifying questions (Attempt {session.get('clarification_attempts', 0) + 1}/{max_attempts})")
+                logger.info(f"❓ Ambiguous query - asking clarification")
                 
                 session['clarification_attempts'] = session.get('clarification_attempts', 0) + 1
                 session['awaiting_clarification'] = True
@@ -660,35 +891,29 @@ def chat():
                 clarification_response = """I'd be happy to help you find the perfect lighting! To give you the best recommendations, could you tell me:
 
 🏠 **Room Type?** (bedroom, living room, kitchen, bathroom, outdoor)
-💡 **Purpose?** (general lighting, task lighting, decorative, emergency backup)
-✨ **Style Preference?** (modern, traditional, energy-efficient)
+💡 **Purpose?** (general lighting, task lighting, decorative, accent lighting)
+✨ **Style Preference?** (modern, traditional, minimalist)
 💰 **Budget Range?** (if any)
 
 Just describe what you're looking for and I'll find the best options!"""
                 
+                html_clarification = markdown.markdown(clarification_response, extensions=['nl2br', 'sane_lists'])
+                
                 return jsonify({
                     'query': query,
-                    'response': clarification_response,
+                    'response': html_clarification,
                     'products': [],
                     'is_clarification': True,
                     'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
                 })
             
             elif is_ambiguous and session.get('clarification_attempts', 0) >= max_attempts:
-                print(f"⚠️ Max clarification attempts reached ({max_attempts}). Proceeding with best-effort search...")
+                logger.info(f"⚠️ Max clarification attempts reached. Proceeding...")
                 session['clarification_attempts'] = 0
                 session['awaiting_clarification'] = False
                 session.modified = True
         
-        # ============================================================
-        # CONTINUE WITH NORMAL SEARCH
-        # ============================================================
-        print(f"🔍 Searching for: '{query}'")
-        
-        filters = extract_filters(query)
-        if any([filters['price_max'], filters['wattage_min'], filters['features']]):
-            print(f"📊 Filters: {filters}")
-        
+        # Continue with enhanced search
         expanded_query, is_contextual = resolve_contextual_query(query)
         search_query = expanded_query if is_contextual else query
         
@@ -705,10 +930,6 @@ Just describe what you're looking for and I'll find the best options!"""
                 'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
             })
         
-        if any([filters['price_max'], filters['wattage_min'], filters['features']]):
-            all_products = apply_filters(all_products, filters)
-            print(f"   ✅ After filtering: {len(all_products)} products")
-        
         ai_response, display_products = generate_response_with_gemini(
             query, 
             all_products, 
@@ -718,19 +939,22 @@ Just describe what you're looking for and I'll find the best options!"""
         
         add_to_conversation(query, ai_response, display_products)
         
+        html_response = markdown.markdown(ai_response, extensions=['nl2br', 'sane_lists'])
+        
         if was_clarification:
             session['clarification_attempts'] = 0
             session.modified = True
         
-        sync_count = sum(1 for p in display_products if p['synchronized'])
+        sync_count = sum(1 for p in display_products if p.get('synchronized', False))
         sync_pct = (sync_count / len(display_products) * 100) if display_products else 0
+        
+        logger.info(f"✅ Response sent to user ({len(display_products)} products)")
         
         return jsonify({
             'query': query,
-            'response': ai_response,
+            'response': html_response,
             'products': display_products,
             'is_clarification': False,
-            'filters_applied': filters if any([filters['price_max'], filters['wattage_min'], filters['features']]) else None,
             'stats': {
                 'total': len(display_products),
                 'synchronized': sync_count,
@@ -739,7 +963,7 @@ Just describe what you're looking for and I'll find the best options!"""
         })
         
     except Exception as e:
-        print(f"❌ ERROR in /chat: {str(e)}")
+        logger.error(f"❌ ERROR in /chat: {str(e)}")
         traceback.print_exc()
         return jsonify({
             'error': str(e),
@@ -748,11 +972,15 @@ Just describe what you're looking for and I'll find the best options!"""
             'stats': {'total': 0, 'synchronized': 0, 'sync_percentage': 0}
         }), 500
 
+
+
 @app.route('/clear_conversation', methods=['POST'])
 def clear_conversation():
     """Clear conversation and reset session"""
     session.clear()
     return jsonify({'message': 'Conversation cleared'})
+
+
 
 @app.route('/reset_debug', methods=['GET'])
 def reset_debug():
@@ -763,19 +991,35 @@ def reset_debug():
         'note': 'Refresh the chat page and try again'
     })
 
+
+
 if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("🤖 COMPLETE MULTIMODAL RAG CHATBOT")
-    print("="*60)
-    print("✨ Features:")
-    print("   • Conversation memory with context")
-    print("   • Smart filters (price, wattage, features)")
-    print("   • Clarifying questions for vague queries")
-    print("   • Clarification attempt limits (2 max)")
-    print("   • Strict text-image synchronization")
-    print("   • Deduplication & relevance filtering")
-    print("🌐 URL: http://localhost:8080")
-    print("="*60 + "\n")
+    if not SEARCH_CONFIG:
+        print("\n" + "="*70)
+        print("❌ ERROR: search_config.json not found!")
+        print("="*70)
+        print("Please run these commands first:")
+        print("  1. python src/analyze_data.py")
+        print("  2. python src/config_generator.py")
+        print("="*70 + "\n")
+        exit(1)
+    
+    logger.info("\n" + "="*70)
+    logger.info("🤖 ENHANCED MULTIMODAL RAG CHATBOT")
+    logger.info("="*70)
+    logger.info("✨ Features:")
+    logger.info("   • Dynamic configuration (no hardcoding!)")
+    logger.info("   • Hierarchical category filtering")
+    logger.info("   • Product type classification (system/accessory/product)")
+    logger.info("   • Auto-discovered attributes")
+    logger.info("   • Hybrid scoring (vector + keyword + attributes)")
+    logger.info("   • Comprehensive logging")
+    logger.info(f"   • {SEARCH_CONFIG['source_data']['total_products']} products indexed")
+    logger.info(f"   • {len(SEARCH_CONFIG['brands']['list'])} brands")
+    logger.info(f"   • {len(SEARCH_CONFIG['categories']['patterns'])} categories")
+    logger.info("🌐 URL: http://localhost:8080")
+    logger.info("📝 Logs: search_logs.txt")
+    logger.info("="*70 + "\n")
     
     port = int(os.getenv("PORT", 8080))
     app.run(host='0.0.0.0', port=port, debug=False)

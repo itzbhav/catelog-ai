@@ -1,0 +1,260 @@
+{
+  "config_version": "2.0",
+  "generated_at": "2025-12-14T14:10:56.642553",
+  "source_data": {
+    "total_products": 1472,
+    "analysis_date": "2025-12-14T13:58:41.230909"
+  },
+  "brands": {
+    "list": [
+      "philips",
+      "mascon"
+    ],
+    "count": 2
+  },
+  "categories": {
+    "patterns": {
+      "LED Lamps": [
+        "bulb",
+        "bulbs",
+        "lamp",
+        "lamps",
+        "led",
+        "led lamps"
+      ],
+      "Downlight": [
+        "down light",
+        "downlight",
+        "recessed light"
+      ],
+      "Surface Mount": [
+        "mount",
+        "surface",
+        "surface mount"
+      ],
+      "Recessed COB": [
+        "cob",
+        "recessed",
+        "recessed cob"
+      ],
+      "Track System": [
+        "mounting system",
+        "rail system",
+        "track mounting",
+        "track rail",
+        "track system"
+      ],
+      "Track Accessory": [
+        "adapter",
+        "connector",
+        "fitting",
+        "joint",
+        "track accessory",
+        "track adapter",
+        "track connector",
+        "track fitting"
+      ],
+      "Track Light": [
+        "light",
+        "track",
+        "track fixture",
+        "track light",
+        "track spotlight"
+      ],
+      "Surface Light": [
+        "light",
+        "surface",
+        "surface light",
+        "surface mounted"
+      ],
+      "Outdoor Light": [
+        "bollard",
+        "garden",
+        "light",
+        "outdoor",
+        "outdoor light",
+        "pathway"
+      ],
+      "Spotlight": [
+        "spot",
+        "spotlight"
+      ],
+      "Accessory": [
+        "accessory",
+        "accessory accessory",
+        "accessory adapter",
+        "accessory connector",
+        "accessory fitting",
+        "adapter",
+        "connector",
+        "fitting",
+        "joint"
+      ],
+      "Bollard Light": [
+        "bollard",
+        "bollard light",
+        "garden",
+        "light",
+        "outdoor",
+        "pathway"
+      ],
+      "LED Bulb": [
+        "bulb",
+        "bulbs",
+        "lamp",
+        "lamps",
+        "led",
+        "led bulb"
+      ],
+      "Aluminum Profile": [
+        "adapter",
+        "aluminum accessory",
+        "aluminum adapter",
+        "aluminum connector",
+        "aluminum fitting",
+        "aluminum profile",
+        "connector",
+        "fitting",
+        "joint"
+      ]
+    },
+    "count": 14
+  },
+  "product_types": {
+    "LED Lamps": "product",
+    "Downlight": "product",
+    "Surface Mount": "product",
+    "Recessed COB": "product",
+    "Track System": "system",
+    "Track Accessory": "accessory",
+    "Track Light": "product",
+    "Surface Light": "product",
+    "Outdoor Light": "product",
+    "Spotlight": "product",
+    "Accessory": "accessory",
+    "Bollard Light": "product",
+    "LED Bulb": "product",
+    "Aluminum Profile": "accessory"
+  },
+  "known_attributes": {
+    "wattages": [
+      1,
+      2,
+      3,
+      3,
+      4,
+      5,
+      5,
+      6,
+      6,
+      7,
+      7,
+      8,
+      8,
+      9,
+      9,
+      10,
+      12,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      22,
+      23,
+      24,
+      28,
+      30,
+      32,
+      36,
+      40,
+      48,
+      50,
+      60,
+      100,
+      200
+    ],
+    "voltages": [
+      220
+    ]
+  },
+  "attribute_patterns": {
+    "wattage": "\\b(\\d+)\\s*w\\b",
+    "voltage": "\\b(\\d+)\\s*v\\b",
+    "ip_rating": "ip\\s*(\\d+)",
+    "lumens": "(\\d+)\\s*(?:lm|lumens?)",
+    "color_temp_kelvin": "(\\d{4})k",
+    "color_temp": {
+      "warm_white": [
+        "warm white",
+        "warm",
+        "ww",
+        "warm tone",
+        "2700k",
+        "3000k",
+        "3200k"
+      ],
+      "cool_white": [
+        "cool white",
+        "cool",
+        "cw",
+        "cool tone",
+        "daylight",
+        "6000k",
+        "6500k",
+        "cool daylight"
+      ],
+      "neutral_white": [
+        "neutral",
+        "neutral white",
+        "natural",
+        "natural white",
+        "4000k",
+        "4500k",
+        "nw"
+      ]
+    }
+  },
+  "scoring_weights": {
+    "text_vector_weight": 0.4,
+    "image_vector_weight": 0.3,
+    "keyword_match_per_word": 10,
+    "wattage_exact_match": 15,
+    "voltage_exact_match": 10,
+    "color_temp_match": 10,
+    "brand_exact_match": 20,
+    "category_match": 5,
+    "ip_rating_match": 8,
+    "text_and_image_sync": 20,
+    "min_score_threshold": 0,
+    "diversity_boost": 5
+  },
+  "query_synonyms": {
+    "bright": [
+      "bright",
+      "high brightness",
+      "high lumen",
+      "powerful"
+    ],
+    "cheap": [
+      "cheap",
+      "affordable",
+      "budget",
+      "economical",
+      "low cost"
+    ],
+    "efficient": [
+      "efficient",
+      "energy saving",
+      "eco",
+      "star rated"
+    ],
+    "decorative": [
+      "decorative",
+      "aesthetic",
+      "ornamental",
+      "designer"
+    ]
+  }
+}

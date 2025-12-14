@@ -1,0 +1,351 @@
+{
+  "analysis_date": "2025-12-14T13:58:41.230909",
+  "summary": {
+    "total_text_products": 1472,
+    "total_image_products": 1414,
+    "synchronized_products": 1414,
+    "sync_percentage": 96.06
+  },
+  "brands": {
+    "count": 2,
+    "list": [
+      "philips",
+      "mascon"
+    ],
+    "top_10": [
+      {
+        "name": "mascon",
+        "count": 1452
+      },
+      {
+        "name": "philips",
+        "count": 20
+      }
+    ]
+  },
+  "categories": {
+    "count": 14,
+    "distribution": {
+      "LED Lamps": 20,
+      "Downlight": 653,
+      "Surface Mount": 5,
+      "Recessed COB": 30,
+      "Track System": 8,
+      "Track Accessory": 26,
+      "Track Light": 132,
+      "Surface Light": 449,
+      "Outdoor Light": 61,
+      "Spotlight": 6,
+      "Accessory": 18,
+      "Bollard Light": 13,
+      "LED Bulb": 11,
+      "Aluminum Profile": 40
+    }
+  },
+  "product_types": {
+    "distribution": {
+      "product": 1380,
+      "system": 8,
+      "accessory": 84
+    },
+    "category_mapping": {
+      "LED Lamps": "product",
+      "Downlight": "product",
+      "Surface Mount": "product",
+      "Recessed COB": "product",
+      "Track System": "system",
+      "Track Accessory": "accessory",
+      "Track Light": "product",
+      "Surface Light": "product",
+      "Outdoor Light": "product",
+      "Spotlight": "product",
+      "Accessory": "accessory",
+      "Bollard Light": "product",
+      "LED Bulb": "product",
+      "Aluminum Profile": "accessory"
+    }
+  },
+  "attributes": {
+    "wattages": {
+      "count": 36,
+      "values": [
+        1,
+        2,
+        3,
+        3,
+        4,
+        5,
+        5,
+        6,
+        6,
+        7,
+        7,
+        8,
+        8,
+        9,
+        9,
+        10,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        20,
+        22,
+        23,
+        24,
+        28,
+        30,
+        32,
+        36,
+        40,
+        48,
+        50,
+        60,
+        100,
+        200
+      ],
+      "distribution": {
+        "7": 35,
+        "4": 24,
+        "5": 89,
+        "9": 51,
+        "10": 56,
+        "30": 93,
+        "40": 10,
+        "50": 1,
+        "12": 148,
+        "14": 1,
+        "17": 1,
+        "20": 175,
+        "23": 1,
+        "8": 122,
+        "18": 41,
+        "100": 5,
+        "6": 14,
+        "36": 7,
+        "200": 2,
+        "2": 22,
+        "3": 57,
+        "15": 191,
+        "22": 16,
+        "48": 9,
+        "24": 42,
+        "16": 12,
+        "32": 6,
+        "05": 41,
+        "1": 12,
+        "60": 9,
+        "03": 3,
+        "08": 64,
+        "07": 20,
+        "06": 15,
+        "09": 12,
+        "28": 1
+      }
+    },
+    "voltages": {
+      "count": 1,
+      "values": [
+        220
+      ],
+      "distribution": {
+        "220": 3
+      }
+    },
+    "colors": {
+      "warm_white": 530,
+      "neutral_white": 455,
+      "cool_white": 298
+    }
+  },
+  "keywords": {
+    "top_50": [
+      {
+        "word": "mascon",
+        "count": 2830
+      },
+      {
+        "word": "white",
+        "count": 1477
+      },
+      {
+        "word": "name",
+        "count": 1472
+      },
+      {
+        "word": "brand",
+        "count": 1472
+      },
+      {
+        "word": "category",
+        "count": 1472
+      },
+      {
+        "word": "description",
+        "count": 1472
+      },
+      {
+        "word": "beam",
+        "count": 1374
+      },
+      {
+        "word": "surface",
+        "count": 1337
+      },
+      {
+        "word": "downlight",
+        "count": 873
+      },
+      {
+        "word": "illumination",
+        "count": 844
+      },
+      {
+        "word": "applications",
+        "count": 743
+      },
+      {
+        "word": "dimension",
+        "count": 711
+      },
+      {
+        "word": "recessed",
+        "count": 693
+      },
+      {
+        "word": "black",
+        "count": 692
+      },
+      {
+        "word": "dali",
+        "count": 685
+      },
+      {
+        "word": "compatible",
+        "count": 670
+      },
+      {
+        "word": "finish",
+        "count": 670
+      },
+      {
+        "word": "driver",
+        "count": 635
+      },
+      {
+        "word": "body",
+        "count": 627
+      },
+      {
+        "word": "provides",
+        "count": 622
+      },
+      {
+        "word": "commercial",
+        "count": 596
+      },
+      {
+        "word": "residential",
+        "count": 592
+      },
+      {
+        "word": "spotlight",
+        "count": 582
+      },
+      {
+        "word": "delivers",
+        "count": 579
+      },
+      {
+        "word": "ideal",
+        "count": 574
+      },
+      {
+        "word": "retail",
+        "count": 570
+      },
+      {
+        "word": "series",
+        "count": 552
+      },
+      {
+        "word": "mounted",
+        "count": 550
+      },
+      {
+        "word": "warm",
+        "count": 539
+      },
+      {
+        "word": "features",
+        "count": 481
+      },
+      {
+        "word": "design",
+        "count": 475
+      },
+      {
+        "word": "natural",
+        "count": 455
+      },
+      {
+        "word": "accent",
+        "count": 447
+      },
+      {
+        "word": "angle",
+        "count": 420
+      },
+      {
+        "word": "track",
+        "count": 387
+      },
+      {
+        "word": "glare",
+        "count": 361
+      },
+      {
+        "word": "evora",
+        "count": 360
+      },
+      {
+        "word": "featuring",
+        "count": 352
+      },
+      {
+        "word": "spread",
+        "count": 349
+      },
+      {
+        "word": "measures",
+        "count": 345
+      },
+      {
+        "word": "modern",
+        "count": 304
+      },
+      {
+        "word": "daylight",
+        "count": 298
+      },
+      {
+        "word": "output",
+        "count": 295
+      },
+      {
+        "word": "premium",
+        "count": 260
+      },
+      {
+        "word": "outdoor",
+        "count": 256
+      },
+      {
+        "word": "matt",
+        "count": 248
+      }
+    ]
+  }
+}
